@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Single field demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 400px; margin: 60px auto; }
+    input { padding: 8px; font-size: 14px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+    button { padding: 8px 16px; font-size: 14px; cursor: pointer; margin-right: 8px; }
+    #status { font-size: 13px; color: #555; margin-top: 8px; min-height: 18px; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <h3>Single field demo</h3>
+
+  <input type="text" id="name-field" placeholder="Enter a name" />
+  <div>
+    <button id="submit-btn">Submit</button>
+    <button id="view-btn">View</button>
+  </div>
+  <p id="status"></p>
+  <ul id="data-list"></ul>
+
+  <script>
+    // Paste your deployed Apps Script /exec URL here
+    const SCRIPT_URL = 'ENTER_YOUR_DEPLOYMENT_URL_HERE';
+
+    const nameField = document.getElementById('name-field');
+    const statusEl = document.getElementById('status');
+    const dataList = document.getElementById('data-list');
+
+    // ---------- Submit (no-cors: fire-and-forget) ----------
+    document.getElementById('submit-btn').addEventListener('click', () => {
+      const value = nameField.value.trim();
+      if (!value) {
+        statusEl.textContent = 'Type something first.';
+        return;
+      }
+      statusEl.textContent = 'Submitting...';
+      const formData = new FormData();
+      formData.append('name', value);
+
+      fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
+        .then(() => {
+          statusEl.textContent = 'Submitted. Click "View" to confirm it landed.';
+          nameField.value = '';
+        })
+        .catch((err) => {
+          statusEl.textContent = 'Something went wrong sending the request.';
+          console.error(err);
+        });
+    });
+
+    // ---------- View (JSONP: the only way to read a response back) ----------
+    function jsonpRequest(url, params) {
+      return new Promise((resolve, reject) => {
+        const callbackName = 'cb_' + Date.now();
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('Request timed out.'));
+        }, 10000);
+
+        function cleanup() {
+          clearTimeout(timeout);
+          delete window[callbackName];
+          script.remove();
+        }
+
+        window[callbackName] = (data) => { cleanup(); resolve(data); };
+
+        const query = new URLSearchParams({ ...params, callback: callbackName }).toString();
+        const script = document.createElement('script');
+        script.src = url + '?' + query;
+        script.onerror = () => { cleanup(); reject(new Error('Request failed.')); };
+        document.body.appendChild(script);
+      });
+    }
+
+    document.getElementById('view-btn').addEventListener('click', async () => {
+      statusEl.textContent = 'Loading...';
+      dataList.innerHTML = '';
+      try {
+        const result = await jsonpRequest(SCRIPT_URL, {});
+        if (result.error) {
+          statusEl.textContent = 'Error: ' + result.error;
+          return;
+        }
+        statusEl.textContent = result.names.length + ' entries.';
+        result.names.forEach((n) => {
+          const li = document.createElement('li');
+          li.textContent = n;
+          dataList.appendChild(li);
+        });
+      } catch (err) {
+        statusEl.textContent = err.message;
+      }
+    });
+  </script>
+</body>
+</html>
