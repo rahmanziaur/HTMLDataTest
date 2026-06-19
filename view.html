@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>HTML x Google Sheets</title>
+    <style>
+      body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 16px; }
+      form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+      input { padding: 8px; font-size: 14px; }
+      button { padding: 8px 16px; font-size: 14px; cursor: pointer; width: fit-content; }
+      #status { font-size: 13px; color: #555; min-height: 18px; }
+      table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
+      th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+      th { background: #f0f0f0; }
+    </style>
+  </head>
+  <body>
+    <h3>Add entry</h3>
+    <form method="post" id="google-form">
+      <!-- Input Field name must match with google sheet Header -->
+      <input type="text" name="First Name" placeholder="First Name" required />
+      <input type="text" name="Second Name" placeholder="Second Name" required />
+      <input type="number" name="Age" placeholder="Age" required />
+      <button type="submit">Submit</button>
+    </form>
+    <p id="status"></p>
+
+    <h3>View data</h3>
+    <button id="view-btn">View all data</button>
+    <div id="table-container"></div>
+
+    <script>
+      const googleAppScriptUrl = "https://script.google.com/macros/s/AKfycbyFZWSk40balLlj_pGT7t0HrJWYe9wt0WI_rYNG9r1tuDXY6PpsUGMfk0E6Nul9vM08_w/exec";
+
+      const form = document.getElementById("google-form");
+      const statusEl = document.getElementById("status");
+      const viewBtn = document.getElementById("view-btn");
+      const tableContainer = document.getElementById("table-container");
+
+      // ---------- Submit (no-cors: fire-and-forget, can't read the response) ----------
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        statusEl.textContent = "Submitting...";
+        fetch(googleAppScriptUrl, {
+          method: "POST",
+          mode: "no-cors",
+          body: new FormData(form),
+        })
+          .then(() => {
+            statusEl.textContent = "Submitted. Click \"View all data\" to confirm it landed.";
+            form.reset();
+          })
+          .catch((error) => {
+            console.log(error);
+            statusEl.textContent = "Something went wrong sending the request.";
+          });
+      });
+
+      // ---------- View data (JSONP: works around Apps Script's missing CORS headers) ----------
+      function jsonpRequest(url, params) {
+        return new Promise((resolve, reject) => {
+          const callbackName = "cb_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+          const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error("Request timed out."));
+          }, 10000);
+
+          function cleanup() {
+            clearTimeout(timeout);
+            delete window[callbackName];
+            script.remove();
+          }
+
+          window[callbackName] = (data) => { cleanup(); resolve(data); };
+
+          const query = new URLSearchParams({ ...params, callback: callbackName }).toString();
+          const script = document.createElement("script");
+          script.src = url + "?" + query;
+          script.onerror = () => { cleanup(); reject(new Error("Request failed.")); };
+          document.body.appendChild(script);
+        });
+      }
+
+      function renderTable(rows) {
+        if (!rows || rows.length === 0) {
+          tableContainer.innerHTML = "<p>No data yet.</p>";
+          return;
+        }
+        const headers = Object.keys(rows[0]);
+        let html = "<table><thead><tr>";
+        headers.forEach((h) => (html += `<th>${h}</th>`));
+        html += "</tr></thead><tbody>";
+        rows.forEach((row) => {
+          html += "<tr>";
+          headers.forEach((h) => (html += `<td>${row[h]}</td>`));
+          html += "</tr>";
+        });
+        html += "</tbody></table>";
+        tableContainer.innerHTML = html;
+      }
+
+      viewBtn.addEventListener("click", async () => {
+        tableContainer.innerHTML = "<p>Loading...</p>";
+        try {
+          const result = await jsonpRequest(googleAppScriptUrl, { action: "getAll" });
+          if (result.error) {
+            tableContainer.innerHTML = `<p>Error: ${result.error}</p>`;
+          } else {
+            renderTable(result.rows);
+          }
+        } catch (err) {
+          tableContainer.innerHTML = `<p>${err.message}</p>`;
+        }
+      });
+    </script>
+  </body>
+</html>
