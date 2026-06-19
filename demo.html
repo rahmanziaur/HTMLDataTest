@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Attendance / submission demo</title>
+</head>
+<body>
+
+<h3>Mark attendance</h3>
+<button onclick="markAttendance('week3')">Mark present — Week 3</button>
+<p id="attendance-status"></p>
+
+<h3>Submit assignment (Drive link)</h3>
+<form id="assignment-form">
+  <input type="text" name="week" placeholder="Week (e.g. week3)" required />
+  <input type="url" name="driveLink" placeholder="Google Drive share link" required />
+  <button type="submit">Submit</button>
+</form>
+
+<script>
+// Replace with your deployed Apps Script /exec URL
+const SCRIPT_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+
+// ---------- Pattern 1: JSONP — use when you need to read the response ----------
+// Works around Apps Script's missing CORS headers by loading a <script> tag
+// instead of using fetch. Good for: attendance confirmation, quiz scores,
+// "already submitted" checks.
+function jsonpRequest(params) {
+  return new Promise((resolve, reject) => {
+    const callbackName = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('Request timed out — are you signed into your @mbstu.ac.bd account?'));
+    }, 10000);
+
+    function cleanup() {
+      clearTimeout(timeout);
+      delete window[callbackName];
+      script.remove();
+    }
+
+    window[callbackName] = (data) => { cleanup(); resolve(data); };
+
+    const query = new URLSearchParams({ ...params, callback: callbackName }).toString();
+    const script = document.createElement('script');
+    script.src = SCRIPT_URL + '?' + query;
+    script.onerror = () => { cleanup(); reject(new Error('Request failed.')); };
+    document.body.appendChild(script);
+  });
+}
+
+async function markAttendance(week) {
+  const statusEl = document.getElementById('attendance-status');
+  statusEl.textContent = 'Marking...';
+  try {
+    const result = await jsonpRequest({ action: 'markAttendance', week });
+    if (result.error) {
+      statusEl.textContent = 'Error: ' + result.error;
+    } else if (result.status === 'already_marked') {
+      statusEl.textContent = 'You already marked attendance for ' + week + '.';
+    } else {
+      statusEl.textContent = 'Attendance marked for ' + week + '.';
+    }
+  } catch (err) {
+    statusEl.textContent = err.message;
+  }
+}
+
+// ---------- Pattern 2: no-cors fire-and-forget — fine when you don't need to read the result ----------
+document.getElementById('assignment-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
+  formData.append('action', 'submitAssignment');
+  fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
+    .then(() => alert('Submitted! (We can\'t confirm success directly — check the sheet, or switch this to the JSONP pattern above if you want a real confirmation.)'))
+    .catch((err) => console.error(err));
+});
+</script>
+</body>
+</html>
